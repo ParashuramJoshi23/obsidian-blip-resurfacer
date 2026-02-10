@@ -1,0 +1,10 @@
+{
+  "id": "blip-resurfacer",
+  "name": "Blip Resurfacer",
+  "version": "0.1.2",
+  "minAppVersion": "1.5.0",
+  "description": "Resurface notes with type: blip, update same note in-place, and generate next quality steps.",
+  "author": "Parashuram + OpenClaw",
+  "authorUrl": "https://github.com/ParashuramJoshi23",
+  "isDesktopOnly": false
+}
