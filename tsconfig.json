@@ -8,5 +8,5 @@
     "skipLibCheck": true,
     "types": ["obsidian"]
   },
-  "include": ["main.ts"]
+  "include": ["main.ts", "lib.ts", "tests/**/*.ts"]
 }
