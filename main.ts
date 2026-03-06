@@ -19,7 +19,6 @@ type LocalCli = 'codex' | 'claude';
 
 interface BlipResurfacerSettings {
   maxDailyResurface: number;
-  reviewIntervalDays: number;
   aiProvider: AiProvider;
   localCli: LocalCli;
   strictLocalAi: boolean;
@@ -35,7 +34,6 @@ interface BlipResurfacerSettings {
 
 const DEFAULT_SETTINGS: BlipResurfacerSettings = {
   maxDailyResurface: 2,
-  reviewIntervalDays: 2,
   aiProvider: 'local-cli',
   localCli: 'codex',
   strictLocalAi: true,
@@ -131,7 +129,6 @@ export default class BlipResurfacerPlugin extends Plugin {
     for (const file of selected) {
       const text = await this.app.vault.read(file);
       const pack = await this.generateBlipPack(file.basename, text);
-      await this.updateBlipFrontmatter(file);
       await this.appendBlipUpdate(file, pack);
     }
 
@@ -139,40 +136,13 @@ export default class BlipResurfacerPlugin extends Plugin {
   }
 
   private async getBlipFiles(): Promise<TFile[]> {
-    const all = this.app.vault.getMarkdownFiles();
-    const withMeta: Array<{ file: TFile; reviewedAt: number }> = [];
-
-    for (const file of all) {
-      const cache = this.app.metadataCache.getFileCache(file);
-      const fm = cache?.frontmatter as Record<string, unknown> | undefined;
-      if (!fm || String(fm.type ?? '').toLowerCase() !== 'blip') continue;
-
-      const reviewedRaw = String(fm.blip_last_reviewed ?? '');
-      const reviewedTs = reviewedRaw ? Date.parse(reviewedRaw) : 0;
-      withMeta.push({ file, reviewedAt: Number.isNaN(reviewedTs) ? 0 : reviewedTs });
-    }
-
-    return withMeta
-      .sort((a, b) => {
-        if (a.reviewedAt !== b.reviewedAt) return a.reviewedAt - b.reviewedAt;
-        return a.file.stat.mtime - b.file.stat.mtime;
+    return this.app.vault.getMarkdownFiles()
+      .filter((file) => {
+        const cache = this.app.metadataCache.getFileCache(file);
+        const fm = cache?.frontmatter as Record<string, unknown> | undefined;
+        return fm && String(fm.type ?? '').toLowerCase() === 'blip';
       })
-      .map((x) => x.file);
-  }
-
-  private async updateBlipFrontmatter(file: TFile) {
-    const today = this.formatDate(new Date());
-    const next = new Date();
-    next.setDate(next.getDate() + this.settings.reviewIntervalDays);
-
-    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-      fm.type = 'blip';
-      fm.blip_status = fm.blip_status ?? 'awareness';
-      fm.blip_created = fm.blip_created ?? today;
-      fm.blip_last_reviewed = today;
-      fm.blip_next_review = this.formatDate(next);
-      fm.blip_resurface_count = Number(fm.blip_resurface_count ?? 0) + 1;
-    });
+      .sort((a, b) => a.stat.mtime - b.stat.mtime);
   }
 
   private async appendBlipUpdate(file: TFile, pack: BlipPack) {
@@ -515,21 +485,6 @@ class BlipResurfacerSettingTab extends PluginSettingTab {
             const n = Number(value);
             if (!Number.isNaN(n) && n > 0) {
               this.plugin.settings.maxDailyResurface = n;
-              await this.plugin.saveSettings();
-            }
-          })
-      );
-
-    new Setting(containerEl)
-      .setName('Review interval days')
-      .setDesc('How many days until next resurfacing recommendation')
-      .addText((text) =>
-        text
-          .setValue(String(this.plugin.settings.reviewIntervalDays))
-          .onChange(async (value) => {
-            const n = Number(value);
-            if (!Number.isNaN(n) && n > 0) {
-              this.plugin.settings.reviewIntervalDays = n;
               await this.plugin.saveSettings();
             }
           })
