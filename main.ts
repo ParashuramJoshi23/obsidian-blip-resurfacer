@@ -21,7 +21,6 @@ type AiProvider = 'local-cli' | 'openai' | 'fallback';
 
 interface BlipResurfacerSettings {
   maxDailyResurface: number;
-  reviewIntervalDays: number;
   aiProvider: AiProvider;
   localCli: LocalCli;
   strictLocalAi: boolean;
@@ -32,7 +31,6 @@ interface BlipResurfacerSettings {
 
 const DEFAULT_SETTINGS: BlipResurfacerSettings = {
   maxDailyResurface: 3,
-  reviewIntervalDays: 2,
   aiProvider: 'local-cli',
   localCli: 'claude',
   strictLocalAi: true,
@@ -122,25 +120,9 @@ export default class BlipResurfacerPlugin extends Plugin {
   }
 
   private async getBlipFiles(): Promise<TFile[]> {
-    const all = this.app.vault.getMarkdownFiles();
-    const withMeta: Array<{ file: TFile; reviewedAt: number }> = [];
-
-    for (const file of all) {
-      if (!this.isBlipFile(file)) continue;
-      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as
-        | Record<string, unknown>
-        | undefined;
-      const reviewedRaw = String(fm?.blip_last_reviewed ?? '');
-      const reviewedTs = reviewedRaw ? Date.parse(reviewedRaw) : 0;
-      withMeta.push({ file, reviewedAt: Number.isNaN(reviewedTs) ? 0 : reviewedTs });
-    }
-
-    return withMeta
-      .sort((a, b) => {
-        if (a.reviewedAt !== b.reviewedAt) return a.reviewedAt - b.reviewedAt;
-        return a.file.stat.mtime - b.file.stat.mtime;
-      })
-      .map((x) => x.file);
+    return this.app.vault.getMarkdownFiles()
+      .filter((file) => this.isBlipFile(file))
+      .sort((a, b) => a.stat.mtime - b.stat.mtime);
   }
 
   /** Resurface current blip: active file if it's a blip, else oldest unreviewed blip. */
@@ -154,23 +136,7 @@ export default class BlipResurfacerPlugin extends Plugin {
   private async resurfaceFile(file: TFile): Promise<void> {
     const text = await this.app.vault.read(file);
     const pack = await this.generateBlipPack(file.basename, text);
-    await this.updateBlipFrontmatter(file);
     await this.appendBlipUpdate(file, pack);
-  }
-
-  private async updateBlipFrontmatter(file: TFile) {
-    const today = formatDate(new Date());
-    const next = new Date();
-    next.setDate(next.getDate() + this.settings.reviewIntervalDays);
-
-    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-      fm.type = 'blip';
-      fm.blip_status = fm.blip_status ?? 'awareness';
-      fm.blip_created = fm.blip_created ?? today;
-      fm.blip_last_reviewed = today;
-      fm.blip_next_review = formatDate(next);
-      fm.blip_resurface_count = Number(fm.blip_resurface_count ?? 0) + 1;
-    });
   }
 
   private async appendBlipUpdate(file: TFile, pack: BlipPack) {
